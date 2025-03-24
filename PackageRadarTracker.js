@@ -6,15 +6,26 @@ class PackageRadarTracker {
     this.options = {
       headless: options.headless !== false, // Default to headless: true
       timeout: options.timeout || 30000,    // Default timeout: 30 seconds
-      saveScreenshot: false,
-      saveHtml: false
+      saveScreenshot: options.saveScreenshot || false,
+      saveHtml: options.saveHtml || false
     };
   }
 
   async track(trackingNumber, courier = 'ups') {
+    // Using puppeteer with more specific options for cloud environments
     const browser = await puppeteer.launch({
       headless: this.options.headless ? 'new' : false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process', // <- this one doesn't works in Windows
+        '--disable-gpu'
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null // Use bundled Chromium if not specified
     });
 
     try {
