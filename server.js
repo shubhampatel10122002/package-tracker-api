@@ -2,9 +2,13 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { PackageRadarTracker } = require('./PackageRadarTracker');
+const { FallbackTracker } = require('./fallback-tracker');
 const { loadAndUseCookies } = require('./cloudflare-bypass');
 const fs = require('fs').promises;
 const path = require('path');
+
+// Determine if we should use the fallback tracker
+const USE_FALLBACK = process.env.NODE_ENV === 'production';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,15 +20,28 @@ app.use(bodyParser.json());
 // Store cookies for reuse
 const COOKIES_PATH = path.join(__dirname, 'cookies.json');
 
-// Initialize cookies on startup if possible
-(async () => {
+// Don't try to pre-load cookies on startup in production
+// as it might fail in a headless environment
+if (process.env.NODE_ENV !== 'production') {
+  (async () => {
+    try {
+      await loadAndUseCookies('https://packageradar.com', COOKIES_PATH);
+      console.log('Pre-loaded Cloudflare bypass cookies');
+    } catch (error) {
+      console.error('Failed to pre-load Cloudflare bypass cookies:', error.message);
+    }
+  })();
+} else {
+  console.log('Running in production mode - skipping cookie pre-loading');
+  
+  // Create an empty cookies file to avoid file not found errors
   try {
-    await loadAndUseCookies('https://packageradar.com', COOKIES_PATH);
-    console.log('Pre-loaded Cloudflare bypass cookies');
+    require('fs').writeFileSync(COOKIES_PATH, JSON.stringify([]));
+    console.log('Created empty cookies file');
   } catch (error) {
-    console.error('Failed to pre-load Cloudflare bypass cookies:', error.message);
+    console.error('Error creating empty cookies file:', error.message);
   }
-})();
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -66,15 +83,21 @@ app.post('/api/track', async (req, res) => {
       console.log('No cookies found or error loading cookies:', error.message);
     }
 
-    // Create tracker instance with production settings
-    const tracker = new PackageRadarTracker({
-      headless: true,
-      timeout: 60000,
-      cookies: cookies
-    });
-
-    // Track the package
-    const result = await tracker.track(trackingNumber, courier);
+    // Use the appropriate tracker based on environment
+    let result;
+    if (USE_FALLBACK) {
+      // Use the fallback tracker in production
+      const fallbackTracker = new FallbackTracker();
+      result = await fallbackTracker.track(trackingNumber, courier);
+    } else {
+      // Use the full Puppeteer tracker in development
+      const tracker = new PackageRadarTracker({
+        headless: true,
+        timeout: 60000,
+        cookies: cookies
+      });
+      result = await tracker.track(trackingNumber, courier);
+    }
 
     // Save any new cookies if available
     if (tracker.newCookies && tracker.newCookies.length > 0) {
