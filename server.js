@@ -1,3 +1,7 @@
+// Add these lines at the top of your server.js file
+// Debug environment variables
+process.env.DEBUG = 'puppeteer:*';
+process.env.NODE_OPTIONS = '--unhandled-rejections=strict';
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
