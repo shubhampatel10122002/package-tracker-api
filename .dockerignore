@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.github
+.gitignore
+README.md
+packageradar-page.png
+packageradar-page.html
