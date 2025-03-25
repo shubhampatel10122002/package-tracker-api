@@ -58,6 +58,9 @@ app.get('/', (req, res) => {
 });
 
 // Tracking endpoint
+// Fix for the "tracker is not defined" error
+// In server.js - Modify the tracking endpoint
+
 app.post('/api/track', async (req, res) => {
   // Extract tracking number from request body
   const { trackingNumber, courier = 'ups' } = req.body;
@@ -85,10 +88,13 @@ app.post('/api/track', async (req, res) => {
 
     // Use the appropriate tracker based on environment
     let result;
+    let newCookies = []; // Initialize here to avoid undefined reference
+    
     if (USE_FALLBACK) {
       // Use the fallback tracker in production
       const fallbackTracker = new FallbackTracker();
       result = await fallbackTracker.track(trackingNumber, courier);
+      // Fallback tracker doesn't have cookies
     } else {
       // Use the full Puppeteer tracker in development
       const tracker = new PackageRadarTracker({
@@ -97,12 +103,18 @@ app.post('/api/track', async (req, res) => {
         cookies: cookies
       });
       result = await tracker.track(trackingNumber, courier);
+      
+      // Save any new cookies if available
+      if (tracker.newCookies && tracker.newCookies.length > 0) {
+        newCookies = tracker.newCookies; // Store for later use
+        console.log(`Got ${tracker.newCookies.length} new cookies`);
+      }
     }
 
-    // Save any new cookies if available
-    if (tracker.newCookies && tracker.newCookies.length > 0) {
-      await fs.writeFile(COOKIES_PATH, JSON.stringify(tracker.newCookies, null, 2));
-      console.log(`Saved ${tracker.newCookies.length} new cookies`);
+    // Save cookies only if we got them (not in fallback mode)
+    if (newCookies.length > 0) {
+      await fs.writeFile(COOKIES_PATH, JSON.stringify(newCookies, null, 2));
+      console.log(`Saved ${newCookies.length} new cookies`);
     }
 
     // Return tracking data as JSON
@@ -111,12 +123,14 @@ app.post('/api/track', async (req, res) => {
     console.error('Tracking error:', error.message);
 
     // If we encounter a tracking error, it might be due to Cloudflare
-    // Try to regenerate cookies for next requests
-    try {
-      await loadAndUseCookies('https://packageradar.com', COOKIES_PATH);
-      console.log('Regenerated Cloudflare bypass cookies after error');
-    } catch (bypassError) {
-      console.error('Failed to regenerate Cloudflare bypass cookies:', bypassError.message);
+    // Try to regenerate cookies for next requests - BUT only if we're not in fallback mode already
+    if (!USE_FALLBACK) {
+      try {
+        await loadAndUseCookies('https://packageradar.com', COOKIES_PATH);
+        console.log('Regenerated Cloudflare bypass cookies after error');
+      } catch (bypassError) {
+        console.error('Failed to regenerate Cloudflare bypass cookies:', bypassError.message);
+      }
     }
 
     res.status(500).json({
@@ -125,6 +139,7 @@ app.post('/api/track', async (req, res) => {
     });
   }
 });
+
 
 // Add a manual Cloudflare cookie regeneration endpoint (for admin use)
 app.post('/api/regenerate-cookies', async (req, res) => {
