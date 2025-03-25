@@ -8,7 +8,10 @@ const fs = require('fs').promises;
 const path = require('path');
 
 // Determine if we should use the fallback tracker
-const USE_FALLBACK = process.env.NODE_ENV === 'production';
+// const USE_FALLBACK = process.env.NODE_ENV === 'production';
+const USE_FALLBACK = process.env.USE_FALLBACK === 'true';
+
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
