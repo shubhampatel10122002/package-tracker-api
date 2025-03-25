@@ -56,10 +56,12 @@ class PackageRadarTracker {
         });
         
         // Overwrite the permissions
-        window.navigator.permissions.query = (parameters) => 
-          parameters.name === 'notifications' 
-            ? Promise.resolve({ state: Notification.permission }) 
-            : Promise.resolve({ state: 'prompt' });
+        if (window.navigator.permissions) {
+          window.navigator.permissions.query = (parameters) => 
+            parameters.name === 'notifications' 
+              ? Promise.resolve({ state: Notification.permission }) 
+              : Promise.resolve({ state: 'prompt' });
+        }
       });
       
       // Set user agent to a common one
@@ -148,58 +150,157 @@ class PackageRadarTracker {
           events: []
         };
 
-        // Get the most recent status (first checkpoint)
-        const firstCheckpoint = document.querySelector('#fragment-checkpoints li:first-child');
-        if (firstCheckpoint) {
-          result.deliveryStatus.status = firstCheckpoint.querySelector('.checkpoint-status')?.textContent.trim() || 'Status not found';
+        // Check different possible selectors for the checkpoints
+        const possibleSelectors = [
+          '#fragment-checkpoints li',
+          '.checkpoint-item',
+          '.tracking-event',
+          '.tracking-history li',
+          '.tracking-details li'
+        ];
+        
+        let checkpoints = null;
+        for (const selector of possibleSelectors) {
+          const elements = document.querySelectorAll(selector);
+          if (elements && elements.length > 0) {
+            checkpoints = elements;
+            break;
+          }
+        }
+        
+        if (!checkpoints || checkpoints.length === 0) {
+          return result;
+        }
 
-          // Get date
-          const dateElement = firstCheckpoint.querySelector('time.datetime2');
-          if (dateElement) {
-            const dateAttr = dateElement.getAttribute('datetime');
-            result.deliveryStatus.date = dateAttr ||
-              `${dateElement.querySelector('span')?.textContent || ''} ${dateElement.textContent.split('\n').pop().trim()}`;
+        // Get the most recent status (first checkpoint)
+        const firstCheckpoint = checkpoints[0];
+        if (firstCheckpoint) {
+          // Try different selectors for status
+          const statusSelectors = ['.checkpoint-status', '.status', '.event-status', '.tracking-status'];
+          for (const selector of statusSelectors) {
+            const statusElement = firstCheckpoint.querySelector(selector);
+            if (statusElement) {
+              result.deliveryStatus.status = statusElement.textContent.trim();
+              break;
+            }
           }
 
-          // Get location
-          result.deliveryStatus.location = firstCheckpoint.querySelector('.text-muted')?.textContent.trim() || 'Location not found';
+          // Get date - try different possible selectors
+          const dateSelectors = ['time.datetime2', '.date', '.event-date', '.tracking-date'];
+          for (const selector of dateSelectors) {
+            const dateElement = firstCheckpoint.querySelector(selector);
+            if (dateElement) {
+              const dateAttr = dateElement.getAttribute('datetime');
+              if (dateAttr) {
+                result.deliveryStatus.date = dateAttr;
+              } else {
+                const span = dateElement.querySelector('span');
+                const spanText = span ? span.textContent : '';
+                const restText = dateElement.textContent.split('\n').pop().trim();
+                result.deliveryStatus.date = `${spanText} ${restText}`.trim();
+              }
+              break;
+            }
+          }
+
+          // Get location - try different possible selectors
+          const locationSelectors = ['.text-muted', '.location', '.event-location', '.tracking-location'];
+          for (const selector of locationSelectors) {
+            const locationElement = firstCheckpoint.querySelector(selector);
+            if (locationElement) {
+              result.deliveryStatus.location = locationElement.textContent.trim();
+              break;
+            }
+          }
 
           // SignedBy is typically not shown on this page but we'll add it for compatibility
-          result.deliveryStatus.signedBy = document.querySelector('.signed-by')?.textContent.trim() || 'Not specified';
+          const signedBySelectors = ['.signed-by', '.signature', '.recipient'];
+          for (const selector of signedBySelectors) {
+            const signedByElement = document.querySelector(selector);
+            if (signedByElement) {
+              result.deliveryStatus.signedBy = signedByElement.textContent.trim();
+              break;
+            }
+          }
         }
 
         // Extract all events
-        const checkpoints = document.querySelectorAll('#fragment-checkpoints li');
-        checkpoints.forEach(checkpoint => {
-          const event = {
-            status: checkpoint.querySelector('.checkpoint-status')?.textContent.trim() || 'Unknown',
-            date: '',
-            location: checkpoint.querySelector('.text-muted')?.textContent.trim() || ''
-          };
-
-          // Get date
-          const dateElement = checkpoint.querySelector('time.datetime2');
-          if (dateElement) {
-            const dateAttr = dateElement.getAttribute('datetime');
-            event.date = dateAttr ||
-              `${dateElement.querySelector('span')?.textContent || ''} ${dateElement.textContent.split('\n').pop().trim()}`;
-          }
-
-          result.events.push(event);
-        });
+        if (checkpoints.length > 0) {
+          checkpoints.forEach(checkpoint => {
+            const event = {
+              status: 'Unknown',
+              date: '',
+              location: ''
+            };
+  
+            // Try different selectors for status
+            const statusSelectors = ['.checkpoint-status', '.status', '.event-status', '.tracking-status'];
+            for (const selector of statusSelectors) {
+              const statusElement = checkpoint.querySelector(selector);
+              if (statusElement) {
+                event.status = statusElement.textContent.trim();
+                break;
+              }
+            }
+  
+            // Get date - try different possible selectors
+            const dateSelectors = ['time.datetime2', '.date', '.event-date', '.tracking-date'];
+            for (const selector of dateSelectors) {
+              const dateElement = checkpoint.querySelector(selector);
+              if (dateElement) {
+                const dateAttr = dateElement.getAttribute('datetime');
+                if (dateAttr) {
+                  event.date = dateAttr;
+                } else {
+                  const span = dateElement.querySelector('span');
+                  const spanText = span ? span.textContent : '';
+                  const restText = dateElement.textContent.split('\n').pop().trim();
+                  event.date = `${spanText} ${restText}`.trim();
+                }
+                break;
+              }
+            }
+  
+            // Get location - try different possible selectors
+            const locationSelectors = ['.text-muted', '.location', '.event-location', '.tracking-location'];
+            for (const selector of locationSelectors) {
+              const locationElement = checkpoint.querySelector(selector);
+              if (locationElement) {
+                event.location = locationElement.textContent.trim();
+                break;
+              }
+            }
+  
+            result.events.push(event);
+          });
+        }
 
         return result;
       });
+
+      // Store any new cookies for future use
+      this.newCookies = await page.cookies();
 
       await browser.close();
       return result;
     } catch (error) {
       // Make sure to close the browser even if there's an error
-      if (browser) await browser.close();
+      if (browser) {
+        try {
+          // Take an error screenshot if available
+          const pages = await browser.pages();
+          if (pages.length > 0) {
+            await pages[0].screenshot({ path: 'error-screenshot.png' });
+            console.log('Error screenshot saved');
+          }
+          await browser.close();
+        } catch (closeError) {
+          console.error('Error closing browser:', closeError.message);
+        }
+      }
       throw new Error(`PackageRadar tracking failed: ${error.message}`);
     }
   }
-}
 
   // Helper method to check if the page has a Cloudflare challenge
   async isCloudflareChallenge(page) {
