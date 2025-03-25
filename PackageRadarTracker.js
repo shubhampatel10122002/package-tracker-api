@@ -19,19 +19,26 @@ class PackageRadarTracker {
   async track(trackingNumber, courier = 'ups') {
     // Enhanced browser launch options for Docker environments
     const browser = await puppeteer.launch({
-      headless: this.options.headless ? 'new' : false,
+      headless: "new", // Force headless new mode
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      ignoreHTTPSErrors: true,
+      dumpio: true, // For debugging - logs Chrome output
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
+        '--disable-software-rasterizer',
         '--no-first-run',
         '--no-zygote',
         '--single-process',
         '--disable-extensions',
         '--disable-blink-features=AutomationControlled',
-        '--window-size=1920,1080'
+        '--window-size=1920,1080',
+        '--headless=new',
+        '--disable-infobars',
+        '--hide-scrollbars',
+        '--mute-audio'
       ]
     });
 
@@ -350,7 +357,8 @@ class PackageRadarTracker {
       }
       
       // Wait a bit longer to let any remaining processes complete
-      await page.waitForTimeout(5000);
+      // Using evaluate for setTimeout since waitForTimeout might not be available
+      await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 5000)));
       
       // Check again if we're still on the challenge page
       if (await this.isCloudflareChallenge(page)) {
