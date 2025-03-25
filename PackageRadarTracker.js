@@ -5,35 +5,34 @@ class PackageRadarTracker {
   constructor(options = {}) {
     this.options = {
       headless: options.headless !== false, // Default to headless: true
-      timeout: options.timeout || 30000,    // Default timeout: 30 seconds
-      saveScreenshot: options.saveScreenshot || false,
-      saveHtml: options.saveHtml || false
+      timeout: options.timeout || 30000, // Default timeout: 30 seconds
+      saveScreenshot: false,
+      saveHtml: false
     };
   }
 
   async track(trackingNumber, courier = 'ups') {
-    // Using puppeteer with more specific options for cloud environments
+    // Enhanced browser launch options for Docker environments
     const browser = await puppeteer.launch({
       headless: this.options.headless ? 'new' : false,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
         '--no-first-run',
         '--no-zygote',
-        '--single-process', // <- this one doesn't works in Windows
-        '--disable-gpu'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null // Use bundled Chromium if not specified
+        '--single-process'
+      ]
     });
 
     try {
       const page = await browser.newPage();
-      
+
       // Set a reasonable viewport
       await page.setViewport({ width: 1366, height: 768 });
-      
+
       // Navigate to the tracking URL
       const url = `https://packageradar.com/courier/${courier}/tracking/${trackingNumber}`;
       console.log(`Navigating to: ${url}`);
@@ -76,7 +75,7 @@ class PackageRadarTracker {
         const firstCheckpoint = document.querySelector('#fragment-checkpoints li:first-child');
         if (firstCheckpoint) {
           result.deliveryStatus.status = firstCheckpoint.querySelector('.checkpoint-status')?.textContent.trim() || 'Status not found';
-          
+
           // Get date
           const dateElement = firstCheckpoint.querySelector('time.datetime2');
           if (dateElement) {
@@ -84,10 +83,10 @@ class PackageRadarTracker {
             result.deliveryStatus.date = dateAttr ||
               `${dateElement.querySelector('span')?.textContent || ''} ${dateElement.textContent.split('\n').pop().trim()}`;
           }
-          
+
           // Get location
           result.deliveryStatus.location = firstCheckpoint.querySelector('.text-muted')?.textContent.trim() || 'Location not found';
-          
+
           // SignedBy is typically not shown on this page but we'll add it for compatibility
           result.deliveryStatus.signedBy = document.querySelector('.signed-by')?.textContent.trim() || 'Not specified';
         }
@@ -100,7 +99,7 @@ class PackageRadarTracker {
             date: '',
             location: checkpoint.querySelector('.text-muted')?.textContent.trim() || ''
           };
-          
+
           // Get date
           const dateElement = checkpoint.querySelector('time.datetime2');
           if (dateElement) {
@@ -108,7 +107,7 @@ class PackageRadarTracker {
             event.date = dateAttr ||
               `${dateElement.querySelector('span')?.textContent || ''} ${dateElement.textContent.split('\n').pop().trim()}`;
           }
-          
+
           result.events.push(event);
         });
 
